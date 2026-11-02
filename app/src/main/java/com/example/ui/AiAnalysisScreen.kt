@@ -1,0 +1,353 @@
+package com.example.ui
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.theme.*
+
+@Composable
+fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
+    val viewedScan by viewModel.viewedScan.collectAsStateWithLifecycle()
+    val aiState by viewModel.aiState.collectAsStateWithLifecycle()
+    var userPrompt by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(CyberGold.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CyberGold, modifier = Modifier.size(24.dp))
+            }
+            Column {
+                Text(
+                    text = "تحلیل هوش مصنوعی رادار (AI Geological Inspector)",
+                    color = CyberGold,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "تفسیر امواج مغناطیسی، تشخیص طلا، حفره و تعیین عمق",
+                    color = GrayText,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        if (viewedScan == null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("هیچ اسکن فعالی جهت تحلیل انتخاب نشده است.", color = Color.White, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("ابتدا از تب تاریخچه یا اسکن، یک اسکن را انتخاب کنید.", color = GrayText, fontSize = 11.sp)
+                }
+            }
+        } else {
+            val scan = viewedScan!!
+
+            // Active Scan Summary Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(scan.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Surface(
+                            color = CyberCyan.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                "شبکه: ${scan.gridWidth}×${scan.gridLength}",
+                                color = CyberCyan,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CardBg, RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("نوع خاک", color = GrayText, fontSize = 9.sp)
+                            Text(scan.soilType, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("اوج مثبت (فلز)", color = CyberRed, fontSize = 9.sp)
+                            Text("${scan.maxSignal.toInt()} ADC", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("حداقل (حفره)", color = CyberCyan, fontSize = 9.sp)
+                            Text("${scan.minSignal.toInt()} ADC", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    // Prompt Input
+                    OutlinedTextField(
+                        value = userPrompt,
+                        onValueChange = { userPrompt = it },
+                        placeholder = { Text("سوال یا دستور خاص (مثلاً: آیا احتمال طلای دست‌ساز هست؟)", color = GrayText, fontSize = 11.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = CyberGold,
+                            unfocusedBorderColor = CardBorder,
+                            focusedContainerColor = CardBg,
+                            unfocusedContainerColor = CardBg
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+
+                    Button(
+                        onClick = { viewModel.runAiAnalysis(userPrompt) },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("run_ai_analysis_button")
+                    ) {
+                        Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.Black)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("شروع تحلیل ژئوفیزیکی با هوش مصنوعی", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Results State Display
+            when (val state = aiState) {
+                is AiAnalysisState.Idle -> {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBg.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(28.dp))
+                            Text(
+                                "هوش مصنوعی با پردازش همبستگی شدت سیگنال، شیب گرادیان و سرعت امواج در لایه‌های خاک، ماهیت و عمق هدف را مشخص می‌کند.",
+                                color = GrayText,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+                is AiAnalysisState.Loading -> {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, CyberGold.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(color = CyberGold, strokeWidth = 3.dp)
+                            Text("در حال مدل‌سازی ۳بعدی و تحلیل ناهنجاری‌ها...", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("بررسی قطبش مغناطیسی و میرایی پالس در بستر خاک", color = GrayText, fontSize = 10.sp)
+                        }
+                    }
+                }
+                is AiAnalysisState.Success -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Confidence & Target Nature Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, CyberGold),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("نتیجه تشخیص هوش مصنوعی", color = CyberGold, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Surface(
+                                        color = CyberGold.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            "${state.confidencePercent}% اطمینان",
+                                            color = CyberGold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(CardBg, RoundedCornerShape(10.dp))
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Verified, contentDescription = null, tint = LaserGreen, modifier = Modifier.size(24.dp))
+                                    Column {
+                                        Text("نوع ساختار هدف:", color = GrayText, fontSize = 10.sp)
+                                        Text(state.anomalyType, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(CardBg, RoundedCornerShape(10.dp))
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Straighten, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(24.dp))
+                                    Column {
+                                        Text("عمق تخمینی دقیق:", color = GrayText, fontSize = 10.sp)
+                                        Text("${state.estimatedDepth} متر زیر سطح زمین", color = CyberCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Detailed Report Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("گزارش فنی و تحلیل ژئوفیزیکی", color = CyberCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                                Text(
+                                    text = state.report,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontSize = 11.sp,
+                                    lineHeight = 18.sp,
+                                    textAlign = TextAlign.Right
+                                )
+                            }
+                        }
+
+                        // Actionable Advice Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("توصیه‌های میدانی کاوش (Field Advice)", color = CyberGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                state.adviceList.forEach { advice ->
+                                    Row(
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = LaserGreen, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                                        Text(advice, color = Color.White, fontSize = 11.sp, lineHeight = 16.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                is AiAnalysisState.Error -> {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceBg),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color.Red),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.Red, modifier = Modifier.size(32.dp))
+                            Text("خطا در انجام تحلیل هوش مصنوعی", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(state.message, color = GrayText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Button(
+                                onClick = { viewModel.runAiAnalysis(userPrompt) },
+                                colors = ButtonDefaults.buttonColors(containerColor = CardBg)
+                            ) {
+                                Text("تلاش مجدد", color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "OKM 3D Visualizer",
+  "description": "Professional 3D ground scan visualizer and radar depth analysis for magnetometer and fluxgate sensors.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
