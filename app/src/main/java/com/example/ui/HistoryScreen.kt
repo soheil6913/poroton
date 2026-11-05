@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,23 +20,29 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.ScanRecord
 import com.example.ui.theme.*
+import com.example.util.ReportExporter
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun HistoryScreen(
     viewModel: VisualizerViewModel,
-    onLoadScan: () -> Unit
+    onLoadScan: () -> Unit,
+    onCompareScan: (ScanRecord) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val savedScans by viewModel.savedScans.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
+    var exportScanTarget by remember { mutableStateOf<ScanRecord?>(null) }
 
     val filteredScans = remember(savedScans, searchQuery) {
         if (searchQuery.isBlank()) savedScans
@@ -93,6 +101,34 @@ fun HistoryScreen(
                 .padding(bottom = 12.dp)
         )
 
+        // Comparison Launch Banner
+        Card(
+            onClick = {
+                val first = savedScans.firstOrNull()
+                if (first != null) onCompareScan(first)
+            },
+            colors = CardDefaults.cardColors(containerColor = CardBg),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+                .testTag("history_compare_banner")
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(Icons.Default.Layers, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(24.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("ابزار مقایسه و هم‌پوشانی اسکن‌ها (Time-Lapse Overlay)", color = CyberCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("انطباق دو اسکن جهت تشخیص حفاری و تغییرات آنومالی در گذر زمان", color = GrayText, fontSize = 9.sp)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = GrayText)
+            }
+        }
+
         if (filteredScans.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("موردی یافت نشد", color = GrayText, fontSize = 14.sp)
@@ -109,12 +145,135 @@ fun HistoryScreen(
                             viewModel.loadScan(scan)
                             onLoadScan()
                         },
+                        onCompare = {
+                            onCompareScan(scan)
+                        },
+                        onExport = {
+                            exportScanTarget = scan
+                        },
                         onDelete = {
                             viewModel.deleteScan(scan)
                         }
                     )
                 }
             }
+        }
+
+        // Export Dialog for Selected History Scan
+        if (exportScanTarget != null) {
+            val target = exportScanTarget!!
+            AlertDialog(
+                onDismissRequest = { exportScanTarget = null },
+                containerColor = SurfaceBg,
+                shape = RoundedCornerShape(16.dp),
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = CyberGold, modifier = Modifier.size(22.dp))
+                        Text("خروجی و گزارش رسمی (Site Export)", color = CyberGold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "فرمت گزارش فنی برای «${target.name.take(22)}...» را انتخاب کنید:",
+                            color = GrayText,
+                            fontSize = 11.sp
+                        )
+
+                        // PDF Report Card
+                        Card(
+                            onClick = {
+                                val t = target
+                                exportScanTarget = null
+                                ReportExporter.exportPdf(context, t)
+                            },
+                            colors = CardDefaults.cardColors(containerColor = CardBg),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, CyberGold.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(CyberRed.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = CyberRed, modifier = Modifier.size(22.dp))
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("گزارش مهندسی رسمی (PDF Report)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("شامل نقشه حرارتی ۲D، جدول اهداف، تخمین عمق، متادیتا و امضا.", color = GrayText, fontSize = 9.5.sp)
+                                }
+                            }
+                        }
+
+                        // CSV Data Card
+                        Card(
+                            onClick = {
+                                val t = target
+                                exportScanTarget = null
+                                ReportExporter.exportCsv(context, t)
+                            },
+                            colors = CardDefaults.cardColors(containerColor = CardBg),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(CyberCyan.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.TableChart, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(22.dp))
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("مجموعه داده‌های خام (CSV Dataset)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("ماتریس شبکه و جدول تک‌تک پالس‌ها (X, Y, ADC) سازگار با اکسل.", color = GrayText, fontSize = 9.5.sp)
+                                }
+                            }
+                        }
+
+                        // Quick Copy to Clipboard
+                        OutlinedButton(
+                            onClick = {
+                                ReportExporter.copyCsvToClipboard(context, target)
+                                exportScanTarget = null
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, tint = GrayText, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("کپی سریع ماتریس در کلیپ‌بورد", color = LightText, fontSize = 11.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { exportScanTarget = null }) {
+                        Text("انصراف", color = GrayText)
+                    }
+                }
+            )
         }
     }
 }
@@ -123,6 +282,8 @@ fun HistoryScreen(
 fun ScanHistoryCard(
     scan: ScanRecord,
     onLoad: () -> Unit,
+    onCompare: () -> Unit = {},
+    onExport: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
@@ -173,21 +334,31 @@ fun ScanHistoryCard(
             }
 
             // Info details
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp)
+            ) {
                 Text(
                     text = scan.name,
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "$formattedDate | ${scan.gridWidth}×${scan.gridLength}",
                     color = GrayText,
-                    fontSize = 10.sp
+                    fontSize = 10.sp,
+                    maxLines = 1
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         color = CyberGold.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(4.dp)
@@ -197,6 +368,7 @@ fun ScanHistoryCard(
                             color = CyberGold,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -209,6 +381,7 @@ fun ScanHistoryCard(
                             color = CyberCyan,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -230,11 +403,30 @@ fun ScanHistoryCard(
                     Text("مشاهده ۳D", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
 
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(28.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+                    IconButton(
+                        onClick = onCompare,
+                        modifier = Modifier.size(28.dp).testTag("compare_scan_${scan.id}")
+                    ) {
+                        Icon(Icons.Default.Layers, contentDescription = "Compare", tint = CyberCyan, modifier = Modifier.size(16.dp))
+                    }
+
+                    IconButton(
+                        onClick = onExport,
+                        modifier = Modifier.size(28.dp).testTag("export_scan_${scan.id}")
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = "Export Report", tint = CyberGold, modifier = Modifier.size(16.dp))
+                    }
+
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }

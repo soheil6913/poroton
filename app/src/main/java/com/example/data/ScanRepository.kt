@@ -55,6 +55,15 @@ class ScanRepository(private val context: Context) {
                         )
                     )
                 }
+                val hasPhase2 = list.any { it.name.contains("فاز ۲") || it.name.contains("Phase 2") }
+                if (!hasPhase2) {
+                    val presets = createPresetDemoScans()
+                    val p4 = presets.firstOrNull { it.name.contains("فاز ۲") || it.name.contains("Phase 2") }
+                    if (p4 != null) {
+                        list.add(1.coerceAtMost(list.size), p4)
+                        saveScansList(list)
+                    }
+                }
                 _scans.value = list
             } catch (e: Exception) {
                 val initialDemos = createPresetDemoScans()
@@ -201,6 +210,41 @@ class ScanRepository(private val context: Context) {
             anomalyClassification = "حفره / راهرو ممتد (Corridor / Void)"
         )
 
-        return listOf(scan1, scan2, scan3)
+        // Preset 4: Time-Lapse Phase 2 of Ancient Chamber (Same 12x12 grid, with excavation at y=6, x=8 and second metal anomaly)
+        val data4 = ArrayList<Float>(width1 * length1)
+        for (y in 0 until length1) {
+            for (x in 0 until width1) {
+                val noise = Random.nextFloat() * 35f + 185f
+                // Original gold target remained
+                val distTarget1Sq = ((x - 8f).pow(2) + (y - 4f).pow(2)) / (2f * 1.5f.pow(2))
+                val t1 = exp(-distTarget1Sq) * 630f
+                // Excavation trench created around x=8, y=6 (new void anomaly of -280 ADC)
+                val distTrenchSq = ((x - 8f).pow(2) + (y - 6.5f).pow(2)) / (2f * 1.2f.pow(2))
+                val trenchDrop = exp(-distTrenchSq) * 310f
+                // Cavity at x=4, y=8 is partially filled with backfill soil (void drop reduced to -140 ADC)
+                val distTarget2Sq = ((x - 4f).pow(2) + (y - 8f).pow(2)) / (2f * 2.0f.pow(2))
+                val t2 = exp(-distTarget2Sq) * 140f
+                // New surface coin/metal drop at x=2, y=2 (+420 ADC)
+                val distNewSq = ((x - 2f).pow(2) + (y - 2f).pow(2)) / (2f * 1.0f.pow(2))
+                val tNew = exp(-distNewSq) * 420f
+
+                val valAtPoint = (noise + t1 - trenchDrop - t2 + tNew).coerceIn(-100f, 1000f)
+                data4.add(valAtPoint)
+            }
+        }
+        val scan4 = ScanRecord(
+            name = "اسکن فاز ۲ اتاقک باستانی (Chamber Phase 2 Rescan)",
+            timestamp = System.currentTimeMillis() - 86400000L * 1, // 1 day ago vs 2 days ago
+            gridWidth = width1,
+            gridLength = length1,
+            soilType = "خاک کشاورزی (Soil)",
+            scanPattern = "زیگزاگ (Zig-Zag)",
+            data = data4,
+            notes = "اسکن مجدد پس از ۳۰ روز: ترانشه حفاری جدید در عمق ۱.۵ متری و پدیدار شدن آنومالی سطحی در شمال غربی.",
+            estimatedDepthMeters = 2.2f,
+            anomalyClassification = "تغییر ساختاری ناشی از حفاری (Excavation Shift)"
+        )
+
+        return listOf(scan1, scan4, scan2, scan3)
     }
 }

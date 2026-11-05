@@ -120,6 +120,132 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
     private val _sliceIndex = MutableStateFlow(0)
     val sliceIndex: StateFlow<Int> = _sliceIndex.asStateFlow()
 
+    // Time-Lapse Comparison & Overlay Tool state
+    private val _comparisonScanA = MutableStateFlow<ScanRecord?>(null)
+    val comparisonScanA: StateFlow<ScanRecord?> = _comparisonScanA.asStateFlow()
+
+    private val _comparisonScanB = MutableStateFlow<ScanRecord?>(null)
+    val comparisonScanB: StateFlow<ScanRecord?> = _comparisonScanB.asStateFlow()
+
+    private val _comparisonMode = MutableStateFlow("DELTA") // DELTA, OVERLAY, BLINK, SPLIT_SWIPE, SIDE_BY_SIDE
+    val comparisonMode: StateFlow<String> = _comparisonMode.asStateFlow()
+
+    private val _overlayOpacity = MutableStateFlow(0.5f)
+    val overlayOpacity: StateFlow<Float> = _overlayOpacity.asStateFlow()
+
+    private val _blinkSpeedMs = MutableStateFlow(600L)
+    val blinkSpeedMs: StateFlow<Long> = _blinkSpeedMs.asStateFlow()
+
+    private val _noiseFilterThreshold = MutableStateFlow(25f)
+    val noiseFilterThreshold: StateFlow<Float> = _noiseFilterThreshold.asStateFlow()
+
+    private val _splitCurtainPos = MutableStateFlow(0.5f)
+    val splitCurtainPos: StateFlow<Float> = _splitCurtainPos.asStateFlow()
+
+    private val _comparisonSelectedCoord = MutableStateFlow<Pair<Int, Int>?>(null)
+    val comparisonSelectedCoord: StateFlow<Pair<Int, Int>?> = _comparisonSelectedCoord.asStateFlow()
+
+    fun setComparisonScanA(scan: ScanRecord) {
+        _comparisonScanA.value = scan
+    }
+
+    fun setComparisonScanB(scan: ScanRecord) {
+        _comparisonScanB.value = scan
+    }
+
+    fun swapComparisonScans() {
+        val a = _comparisonScanA.value
+        val b = _comparisonScanB.value
+        _comparisonScanA.value = b
+        _comparisonScanB.value = a
+    }
+
+    fun setComparisonMode(mode: String) {
+        _comparisonMode.value = mode
+    }
+
+    fun setOverlayOpacity(opacity: Float) {
+        _overlayOpacity.value = opacity.coerceIn(0f, 1f)
+    }
+
+    fun setBlinkSpeed(ms: Long) {
+        _blinkSpeedMs.value = ms.coerceIn(200L, 2000L)
+    }
+
+    fun setNoiseFilterThreshold(threshold: Float) {
+        _noiseFilterThreshold.value = threshold.coerceIn(0f, 150f)
+    }
+
+    fun setSplitCurtainPos(pos: Float) {
+        _splitCurtainPos.value = pos.coerceIn(0f, 1f)
+    }
+
+    fun setComparisonSelectedCoord(coord: Pair<Int, Int>?) {
+        _comparisonSelectedCoord.value = coord
+    }
+
+    fun generateTimeLapseSimulatedScan(base: ScanRecord, mode: String) {
+        val w = base.gridWidth
+        val l = base.gridLength
+        val newData = ArrayList<Float>(base.data.size)
+        val rnd = kotlin.random.Random(System.currentTimeMillis())
+
+        for (y in 0 until l) {
+            for (x in 0 until w) {
+                val idx = y * w + x
+                val orig = base.data.getOrNull(idx) ?: 200f
+                val perturbed = when (mode) {
+                    "EXCAVATION" -> {
+                        val dx = x - w * 0.5f
+                        val dy = y - l * 0.5f
+                        val distSq = (dx * dx + dy * dy) / (2f * 1.5f * 1.5f)
+                        val hole = kotlin.math.exp(-distSq) * 320f
+                        (orig - hole + (rnd.nextFloat() * 20f - 10f)).coerceAtLeast(-100f)
+                    }
+                    "NEW_TARGET" -> {
+                        val dx = x - w * 0.75f
+                        val dy = y - l * 0.3f
+                        val distSq = (dx * dx + dy * dy) / (2f * 1.2f * 1.2f)
+                        val metalPeak = kotlin.math.exp(-distSq) * 550f
+                        (orig + metalPeak + (rnd.nextFloat() * 20f - 10f)).coerceAtMost(1000f)
+                    }
+                    else -> {
+                        val dx = x - w * 0.3f
+                        val dy = y - l * 0.7f
+                        val distSq = (dx * dx + dy * dy) / (2f * 2.0f * 2.0f)
+                        val sink = kotlin.math.exp(-distSq) * 160f
+                        orig - sink + (rnd.nextFloat() * 30f - 15f)
+                    }
+                }
+                newData.add(perturbed)
+            }
+        }
+
+        val modeLabel = when (mode) {
+            "EXCAVATION" -> "حفاری و ترانشه (Excavation Pit)"
+            "NEW_TARGET" -> "آنومالی فلزی جدید (New Metallic Deposit)"
+            else -> "فرونشست و جابجایی خاک (Subsidence & Settlement)"
+        }
+
+        val simulated = ScanRecord(
+            name = "اسکن دوره‌ای [${base.name.take(15)}...] ($modeLabel)",
+            timestamp = System.currentTimeMillis(),
+            gridWidth = w,
+            gridLength = l,
+            soilType = base.soilType,
+            scanPattern = base.scanPattern,
+            data = newData,
+            notes = "تولید خودکار شبیه‌ساز تغییرات زمانی برای مقایسه با ${base.name}",
+            maxSignal = newData.maxOrNull() ?: 0f,
+            minSignal = newData.minOrNull() ?: 0f,
+            estimatedDepthMeters = (base.estimatedDepthMeters * 0.9f).coerceAtLeast(0.5f),
+            anomalyClassification = modeLabel
+        )
+
+        repository.saveScan(simulated)
+        _comparisonScanB.value = simulated
+    }
+
     // AI Analysis
     private val aiPrefs = application.getSharedPreferences("okm_ai_settings", Context.MODE_PRIVATE)
 
@@ -143,11 +269,17 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     init {
-        // Automatically load first preset scan into visualizer for immediate inspection
+        // Automatically load first preset scan into visualizer and comparison for immediate inspection
         viewModelScope.launch {
             savedScans.collect { list ->
                 if (_viewedScan.value == null && list.isNotEmpty()) {
                     _viewedScan.value = list.first()
+                }
+                if (_comparisonScanA.value == null && list.isNotEmpty()) {
+                    _comparisonScanA.value = list.first()
+                }
+                if (_comparisonScanB.value == null && list.size > 1) {
+                    _comparisonScanB.value = list[1]
                 }
             }
         }

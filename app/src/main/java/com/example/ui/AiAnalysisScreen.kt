@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -119,16 +120,39 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(scan.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                tint = CyberGold,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = scan.name,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Surface(
                             color = CyberCyan.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(6.dp)
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.35f))
                         ) {
                             Text(
                                 "شبکه: ${scan.gridWidth}×${scan.gridLength}",
                                 color = CyberCyan,
                                 fontSize = 10.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -137,20 +161,57 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(CardBg, RoundedCornerShape(10.dp))
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceAround
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("نوع خاک", color = GrayText, fontSize = 9.sp)
-                            Text(scan.soilType, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("نوع خاک", color = GrayText, fontSize = 9.sp, maxLines = 1)
+                            Text(
+                                scan.soilType,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("اوج مثبت (فلز)", color = CyberRed, fontSize = 9.sp)
-                            Text("${scan.maxSignal.toInt()} ADC", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        HorizontalDivider(
+                            modifier = Modifier.height(24.dp).width(1.dp),
+                            color = Color.White.copy(alpha = 0.12f)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("اوج مثبت (فلز)", color = CyberRed, fontSize = 9.sp, maxLines = 1)
+                            Text(
+                                "${scan.maxSignal.toInt()} ADC",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("حداقل (حفره)", color = CyberCyan, fontSize = 9.sp)
-                            Text("${scan.minSignal.toInt()} ADC", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        HorizontalDivider(
+                            modifier = Modifier.height(24.dp).width(1.dp),
+                            color = Color.White.copy(alpha = 0.12f)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("حداقل (حفره)", color = CyberCyan, fontSize = 9.sp, maxLines = 1)
+                            Text(
+                                "${scan.minSignal.toInt()} ADC",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
                         }
                     }
 

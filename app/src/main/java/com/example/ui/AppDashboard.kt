@@ -32,7 +32,7 @@ fun AppDashboard(
                     selected = currentTab == "scan",
                     onClick = { currentTab = "scan" },
                     icon = { Icon(Icons.Default.Map, contentDescription = "Scan") },
-                    label = { Text("اسکن (Scan)", fontSize = 10.sp) },
+                    label = { Text("اسکن", fontSize = 9.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = CyberGold,
                         selectedTextColor = CyberGold,
@@ -46,7 +46,7 @@ fun AppDashboard(
                     selected = currentTab == "visualizer",
                     onClick = { currentTab = "visualizer" },
                     icon = { Icon(Icons.Default.ViewInAr, contentDescription = "3D") },
-                    label = { Text("سه‌بعدی (3D)", fontSize = 10.sp) },
+                    label = { Text("سه‌بعدی", fontSize = 9.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = CyberCyan,
                         selectedTextColor = CyberCyan,
@@ -60,7 +60,7 @@ fun AppDashboard(
                     selected = currentTab == "tracker",
                     onClick = { currentTab = "tracker" },
                     icon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Live") },
-                    label = { Text("زنده (Live)", fontSize = 10.sp) },
+                    label = { Text("زنده", fontSize = 9.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = CyberRed,
                         selectedTextColor = CyberRed,
@@ -74,7 +74,7 @@ fun AppDashboard(
                     selected = currentTab == "history",
                     onClick = { currentTab = "history" },
                     icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("تاریخچه (History)", fontSize = 10.sp) },
+                    label = { Text("تاریخچه", fontSize = 9.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = CyberGold,
                         selectedTextColor = CyberGold,
@@ -85,10 +85,24 @@ fun AppDashboard(
                     modifier = Modifier.testTag("nav_history")
                 )
                 NavigationBarItem(
+                    selected = currentTab == "compare",
+                    onClick = { currentTab = "compare" },
+                    icon = { Icon(Icons.Default.Layers, contentDescription = "Compare") },
+                    label = { Text("مقایسه", fontSize = 9.sp, maxLines = 1) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = CyberCyan,
+                        selectedTextColor = CyberCyan,
+                        unselectedIconColor = GrayText,
+                        unselectedTextColor = GrayText,
+                        indicatorColor = CardBg
+                    ),
+                    modifier = Modifier.testTag("nav_compare")
+                )
+                NavigationBarItem(
                     selected = currentTab == "ai",
                     onClick = { currentTab = "ai" },
                     icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI") },
-                    label = { Text("هوش مصنوعی (AI)", fontSize = 10.sp) },
+                    label = { Text("هوشمند", fontSize = 9.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = CyberGold,
                         selectedTextColor = CyberGold,
@@ -112,9 +126,24 @@ fun AppDashboard(
 
             when (currentTab) {
                 "scan" -> ScanScreen(viewModel = viewModel, onNavigateToAi = { currentTab = "ai" })
-                "visualizer" -> VisualizerScreen(viewModel = viewModel, onNavigateToAi = { currentTab = "ai" })
+                "visualizer" -> VisualizerScreen(
+                    viewModel = viewModel,
+                    onNavigateToAi = { currentTab = "ai" },
+                    onNavigateToCompare = { currentTab = "compare" }
+                )
                 "tracker" -> TrackerScreen(viewModel = viewModel)
-                "history" -> HistoryScreen(viewModel = viewModel, onLoadScan = { currentTab = "visualizer" })
+                "history" -> HistoryScreen(
+                    viewModel = viewModel,
+                    onLoadScan = { currentTab = "visualizer" },
+                    onCompareScan = { scan ->
+                        viewModel.setComparisonScanA(scan)
+                        currentTab = "compare"
+                    }
+                )
+                "compare" -> ComparisonScreen(
+                    viewModel = viewModel,
+                    onNavigateToAi = { currentTab = "ai" }
+                )
                 "ai" -> AiAnalysisScreen(viewModel = viewModel)
             }
         }
