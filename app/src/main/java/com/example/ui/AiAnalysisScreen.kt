@@ -25,7 +25,12 @@ import com.example.ui.theme.*
 fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
     val viewedScan by viewModel.viewedScan.collectAsStateWithLifecycle()
     val aiState by viewModel.aiState.collectAsStateWithLifecycle()
+    val aiMode by viewModel.aiMode.collectAsStateWithLifecycle()
+    val customApiKey by viewModel.customApiKey.collectAsStateWithLifecycle()
+
     var userPrompt by remember { mutableStateOf("") }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var tempApiKey by remember { mutableStateOf(customApiKey) }
 
     Column(
         modifier = Modifier
@@ -38,29 +43,44 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(CyberGold.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CyberGold, modifier = Modifier.size(24.dp))
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(CyberGold.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CyberGold, modifier = Modifier.size(24.dp))
+                }
+                Column {
+                    Text(
+                        text = "تحلیل هوش مصنوعی رادار (AI Geological Inspector)",
+                        color = CyberGold,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "تفسیر امواج مغناطیسی، تشخیص طلا، حفره و تعیین عمق",
+                        color = GrayText,
+                        fontSize = 11.sp
+                    )
+                }
             }
-            Column {
-                Text(
-                    text = "تحلیل هوش مصنوعی رادار (AI Geological Inspector)",
-                    color = CyberGold,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "تفسیر امواج مغناطیسی، تشخیص طلا، حفره و تعیین عمق",
-                    color = GrayText,
-                    fontSize = 11.sp
-                )
+
+            IconButton(
+                onClick = {
+                    tempApiKey = customApiKey
+                    showApiKeyDialog = true
+                },
+                colors = IconButtonDefaults.iconButtonColors(containerColor = CardBg)
+            ) {
+                Icon(Icons.Default.Key, contentDescription = "API Key", tint = CyberCyan, modifier = Modifier.size(20.dp))
             }
         }
 
@@ -134,6 +154,36 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         }
                     }
 
+                    // Mode Selector Chips
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("موتور هوش مصنوعی (AI Engine Mode):", color = GrayText, fontSize = 10.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "AUTO" to "هوشمند / خودکار",
+                                "OFFLINE" to "آفلاین (بدون اینترنت)",
+                                "CLOUD" to "ابری Google"
+                            ).forEach { (mKey, mLabel) ->
+                                val selected = aiMode == mKey
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { viewModel.setAiMode(mKey) },
+                                    label = { Text(mLabel, fontSize = 9.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = CyberGold.copy(alpha = 0.2f),
+                                        selectedLabelColor = CyberGold,
+                                        containerColor = CardBg,
+                                        labelColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
                     // Prompt Input
                     OutlinedTextField(
                         value = userPrompt,
@@ -152,18 +202,37 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         minLines = 2
                     )
 
-                    Button(
-                        onClick = { viewModel.runAiAnalysis(userPrompt) },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("run_ai_analysis_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.Black)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("شروع تحلیل ژئوفیزیکی با هوش مصنوعی", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = { viewModel.runAiAnalysis(userPrompt, forceOffline = false) },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(48.dp)
+                                .testTag("run_ai_analysis_button")
+                        ) {
+                            Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.Black)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("شروع تحلیل ژئوفیزیکی", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.runAiAnalysis(userPrompt, forceOffline = true) },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .weight(0.9f)
+                                .height(48.dp)
+                                .testTag("run_offline_analysis_button")
+                        ) {
+                            Icon(Icons.Default.OfflinePin, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("تحلیل آفلاین", color = CyberCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -183,7 +252,7 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         ) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(28.dp))
                             Text(
-                                "هوش مصنوعی با پردازش همبستگی شدت سیگنال، شیب گرادیان و سرعت امواج در لایه‌های خاک، ماهیت و عمق هدف را مشخص می‌کند.",
+                                "هوش مصنوعی با پردازش همبستگی شدت سیگنال، شیب گرادیان و سرعت امواج در لایه‌های خاک، ماهیت و عمق هدف را مشخص می‌کند. در مناطق بدون پوشش اینترنت، موتور آفلاین به صورت کامل و دقیق عمل خواهد کرد.",
                                 color = GrayText,
                                 fontSize = 11.sp
                             )
@@ -212,6 +281,35 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                 }
                 is AiAnalysisState.Success -> {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Provider / Status Note
+                        if (state.providerNote.isNotBlank()) {
+                            Surface(
+                                color = if (state.isOfflineEngine) CardBg else CyberCyan.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, if (state.isOfflineEngine) CyberGold.copy(alpha = 0.4f) else CyberCyan.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        if (state.isOfflineEngine) Icons.Default.OfflinePin else Icons.Default.CloudDone,
+                                        contentDescription = null,
+                                        tint = if (state.isOfflineEngine) CyberGold else CyberCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        state.providerNote,
+                                        color = if (state.isOfflineEngine) CyberGold else CyberCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
                         // Confidence & Target Nature Card
                         Card(
                             colors = CardDefaults.cardColors(containerColor = SurfaceBg),
@@ -333,21 +431,99 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.Red, modifier = Modifier.size(32.dp))
-                            Text("خطا در انجام تحلیل هوش مصنوعی", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(state.message, color = GrayText, fontSize = 10.sp, textAlign = TextAlign.Center)
-                            Button(
-                                onClick = { viewModel.runAiAnalysis(userPrompt) },
-                                colors = ButtonDefaults.buttonColors(containerColor = CardBg)
+                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.Red, modifier = Modifier.size(36.dp))
+                            Text("خطا در برقراری ارتباط با سرویس ابری", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                state.message,
+                                color = GrayText,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("تلاش مجدد", color = Color.White)
+                                if (state.canFallbackToOffline) {
+                                    Button(
+                                        onClick = { viewModel.runAiAnalysis(userPrompt, forceOffline = true) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.OfflinePin, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("تحلیل با موتور آفلاین", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.runAiAnalysis(userPrompt, forceOffline = false) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, CardBorder)
+                                ) {
+                                    Text("تلاش مجدد", color = Color.White, fontSize = 11.sp)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Custom API Key Dialog
+    if (showApiKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            containerColor = SurfaceBg,
+            title = {
+                Text("تنظیم کلید اختصاصی Google Gemini API", color = CyberGold, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "در صورت تمایل می‌توانید کلید API شخصی خود را از Google AI Studio وارد کنید. برنامه در صورت قطعی اینترنت به صورت هوشمند از موتور آفلاین استفاده می‌کند.",
+                        color = GrayText,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                    OutlinedTextField(
+                        value = tempApiKey,
+                        onValueChange = { tempApiKey = it },
+                        label = { Text("Gemini API Key", color = GrayText) },
+                        placeholder = { Text("AIzaSy...", color = GrayText.copy(alpha = 0.5f)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = CyberGold,
+                            unfocusedBorderColor = CardBorder
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setCustomApiKey(tempApiKey)
+                        showApiKeyDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberGold)
+                ) {
+                    Text("ذخیره کلید", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("انصراف", color = GrayText)
+                }
+            }
+        )
     }
 }

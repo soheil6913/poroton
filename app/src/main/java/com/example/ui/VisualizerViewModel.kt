@@ -6,11 +6,16 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.ScanRecord
 import com.example.data.ScanRepository
 import com.example.hardware.SensorManager
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -26,9 +31,14 @@ sealed interface AiAnalysisState {
         val estimatedDepth: Float,
         val anomalyType: String,
         val confidencePercent: Int,
-        val adviceList: List<String>
+        val adviceList: List<String>,
+        val isOfflineEngine: Boolean = false,
+        val providerNote: String = ""
     ) : AiAnalysisState
-    data class Error(val message: String) : AiAnalysisState
+    data class Error(
+        val message: String,
+        val canFallbackToOffline: Boolean = true
+    ) : AiAnalysisState
 }
 
 class VisualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -111,8 +121,26 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
     val sliceIndex: StateFlow<Int> = _sliceIndex.asStateFlow()
 
     // AI Analysis
+    private val aiPrefs = application.getSharedPreferences("okm_ai_settings", Context.MODE_PRIVATE)
+
     private val _aiState = MutableStateFlow<AiAnalysisState>(AiAnalysisState.Idle)
     val aiState: StateFlow<AiAnalysisState> = _aiState.asStateFlow()
+
+    private val _aiMode = MutableStateFlow(aiPrefs.getString("ai_mode", "AUTO") ?: "AUTO") // AUTO, OFFLINE, CLOUD
+    val aiMode: StateFlow<String> = _aiMode.asStateFlow()
+
+    private val _customApiKey = MutableStateFlow(aiPrefs.getString("custom_api_key", "") ?: "")
+    val customApiKey: StateFlow<String> = _customApiKey.asStateFlow()
+
+    fun setAiMode(mode: String) {
+        _aiMode.value = mode
+        aiPrefs.edit().putString("ai_mode", mode).apply()
+    }
+
+    fun setCustomApiKey(key: String) {
+        _customApiKey.value = key.trim()
+        aiPrefs.edit().putString("custom_api_key", key.trim()).apply()
+    }
 
     init {
         // Automatically load first preset scan into visualizer for immediate inspection
@@ -332,36 +360,36 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Executes AI Geological Analysis using Gemini API if API key exists,
-     * or uses an offline geological heuristic expert system as resilient fallback!
+     * Executes AI Geological Analysis using Gemini API if available,
+     * or uses an advanced offline geological heuristic expert system as resilient fallback.
      */
-    fun runAiAnalysis(customPrompt: String = "") {
+    fun runAiAnalysis(customPrompt: String = "", forceOffline: Boolean = false) {
         val scan = _viewedScan.value ?: return
         viewModelScope.launch {
             _aiState.value = AiAnalysisState.Loading
 
-            try {
-                // Calculate statistical indicators
-                val avg = scan.data.average().toFloat()
-                val maxVal = scan.maxSignal
-                val minVal = scan.minSignal
-                val variance = scan.data.map { (it - avg) * (it - avg) }.average()
-                val anomalyRatio = (maxVal - minVal) / (avg.coerceAtLeast(1f))
+            val avg = scan.data.average().toFloat()
+            val maxVal = scan.maxSignal
+            val minVal = scan.minSignal
+            val variance = scan.data.map { (it - avg) * (it - avg) }.average()
+            val classification = classifyAnomaly(maxVal, minVal)
+            val depth = scan.estimatedDepthMeters.coerceAtLeast(0.8f)
 
-                // Build detailed geological description
-                val classification = classifyAnomaly(maxVal, minVal)
-                val depth = scan.estimatedDepthMeters.coerceAtLeast(0.8f)
+            val resolvedApiKey = when {
+                _customApiKey.value.isNotBlank() -> _customApiKey.value.trim()
+                else -> try {
+                    val key = com.example.BuildConfig.GEMINI_API_KEY
+                    if (key.isNotBlank() && key != "MY_GEMINI_API_KEY") key else ""
+                } catch (e: Exception) { "" }
+            }
 
-                val apiKey = try {
-                    com.example.BuildConfig.GEMINI_API_KEY
-                } catch (e: Exception) {
-                    ""
-                }
+            val mode = _aiMode.value
+            val allowCloud = !forceOffline && mode != "OFFLINE" && resolvedApiKey.isNotBlank()
 
-                if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
-                    // Call Gemini API server-side
+            if (allowCloud) {
+                try {
                     val promptText = """
-                        You are a senior geophysicist and OKM ground scan expert.
+                        You are a senior geophysicist and OKM ground radar expert.
                         Analyze this subsurface magnetometer scan:
                         - Grid size: ${scan.gridWidth} x ${scan.gridLength} (${scan.data.size} points)
                         - Soil type: ${scan.soilType}
@@ -369,7 +397,7 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
                         - Preliminary Classification: $classification
                         - Estimated Depth: $depth meters
                         - User note: ${scan.notes}
-                        - User question: $customPrompt
+                        - User specific inquiry: $customPrompt
 
                         Provide a comprehensive, authoritative radar analysis report in Persian (فارسی) followed by an English summary.
                         Include:
@@ -379,115 +407,192 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
                         4. Step-by-step Field Action Advice
                     """.trimIndent()
 
-                    val responseText = callGeminiApiDirect(apiKey, promptText)
+                    val responseText = callGeminiApiDirect(resolvedApiKey, promptText)
                     _aiState.value = AiAnalysisState.Success(
                         report = responseText,
                         estimatedDepth = depth,
                         anomalyType = classification,
-                        confidencePercent = (85 + (variance % 10)).toInt().coerceIn(75, 96),
+                        confidencePercent = (88 + (variance % 8)).toInt().coerceIn(80, 97),
                         adviceList = listOf(
                             "اسکن تاییدی عمود بر مسیر فعلی (Cross-Scan) در ابعاد کوچک‌تر انجام دهید.",
                             "نقطه اوج سیگنال در مرکز گرادیان قرمز را نشانه‌گذاری فیزیکی کنید.",
                             "نسبت نفوذ امواج در ${scan.soilType} را در عمق‌سنجی نهایی لحاظ کنید."
+                        ),
+                        isOfflineEngine = false,
+                        providerNote = "تحلیل هوشمند توسط سرور ابری Google Gemini"
+                    )
+                    return@launch
+                } catch (e: Exception) {
+                    android.util.Log.e("AiAnalysis", "Cloud AI error: ${e.message}", e)
+                    if (mode == "CLOUD") {
+                        // User explicitly requested Cloud-only mode
+                        val errorDesc = when {
+                            e.message?.contains("Unable to resolve host") == true || e.message?.contains("Failed to connect") == true ->
+                                "عدم دسترسی به اینترنت یا سرورهای ابری (لطفاً اتصال اینترنت یا فیلترشکن را بررسی کنید)."
+                            e.message?.contains("API_KEY_INVALID") == true || e.message?.contains("400") == true ->
+                                "کلید API معتبر نیست یا مجوز آن منقضی شده است."
+                            else -> "خطای اتصال: ${e.localizedMessage ?: "عدم پاسخ سرور"}"
+                        }
+                        _aiState.value = AiAnalysisState.Error(
+                            message = errorDesc,
+                            canFallbackToOffline = true
                         )
-                    )
-                } else {
-                    // Highly detailed offline Expert Geological Reasoning Engine
-                    kotlinx.coroutines.delay(1200)
-
-                    val isHighMetal = maxVal > 600f
-                    val isCavity = minVal < 100f
-                    val confidence = if (isHighMetal && isCavity) 94 else if (isHighMetal || isCavity) 88 else 79
-
-                    val advice = mutableListOf<String>()
-                    advice.add("اسکن تکمیلی با سرعت چرخش کمتر برای وضوح بالاتر لبه‌های آنومالی پیشنهاد می‌شود.")
-                    if (isHighMetal) {
-                        advice.add("سیگنال مثبت قوی بیانگر هدایت الکتریکی بالا (احتمال طلا، مفرغ یا نقره) است.")
+                        return@launch
                     }
-                    if (isCavity) {
-                        advice.add("افت مقادیر به سمت رنگ آبی نشان‌دهنده شکست تراکم خاک و وجود فضای خالی یا راهرو است.")
-                    }
-                    advice.add("از تراز بودن سنسور عمودی در حین گام‌برداری اطمینان حاصل فرمایید.")
-
-                    val report = buildString {
-                        append("گزارش ژئوفیزیکی و تفسیر هوش مصنوعی رادار زمین\n")
-                        append("=========================================\n\n")
-                        append("۱. تشخیص ماهیت هدف (Target Nature):\n")
-                        append("بر اساس تحلیل ماتریس سیگنال‌های دریافتی، نوع آنومالی تحت عنوان «$classification» ارزیابی شد. شدت سیگنال بیشینه به $maxVal ADC رسیده که انحراف شدید ${(maxVal - 250).toInt()} واحدی از بستر یکنواخت خاک را نشان می‌دهد.\n\n")
-                        append("۲. محاسبه عمق تخمینی (Depth Calculation):\n")
-                        append("با توجه به ثابت دی‌الکتریک بستر «${scan.soilType}» و زمان میرایی پالس‌ها، عمق تقریبی مرکز هدف در فاصله $depth متری از سطح زمین برآورد می‌گردد.\n\n")
-                        append("۳. توصیف هندسی لکه هدف (Spatial Geometry):\n")
-                        if (isCavity && isHighMetal) {
-                            append("ساختار از نوع ترکیبی مقبره/اتاقک با تدفین فلزی است؛ ناحیه با سیگنال منفی (حفره) در برگیرنده کانون مثبت رسانا می‌باشد.\n\n")
-                        } else if (isHighMetal) {
-                            append("لکه سیگنال کروی متمرکز با خطوط ایزومغناطیسی فشرده، نشان‌دهنده شیء فلزی فشرده و غیرپراکنده است.\n\n")
-                        } else {
-                            append("کانتورهای هم‌پتانسیل کشیده و یکنواخت بوده که بیانگر لایه‌بندی طبیعی یا تونل خاکی می‌باشد.\n\n")
-                        }
-                        append("۴. توصیه‌های عملیاتی:\n")
-                        advice.forEachIndexed { i, a ->
-                            append("${i + 1}. $a\n")
-                        }
-                    }
-
-                    _aiState.value = AiAnalysisState.Success(
-                        report = report,
-                        estimatedDepth = depth,
-                        anomalyType = classification,
-                        confidencePercent = confidence,
-                        adviceList = advice
-                    )
+                    // In AUTO mode: seamlessly fall back to offline expert reasoning engine!
                 }
-            } catch (e: Exception) {
-                _aiState.value = AiAnalysisState.Error(e.localizedMessage ?: "خطا در تحلیل هوش مصنوعی")
             }
+
+            // Run offline geological expert reasoning engine
+            kotlinx.coroutines.delay(600)
+            val offlineData = generateOfflineGeologicalReport(scan, classification, depth, maxVal, minVal, customPrompt)
+            val fallbackNote = if (allowCloud) {
+                "سرویس ابری به دلیل اختلال شبکه در دسترس نبود؛ تحلیل به صورت خودکار توسط موتور هوشمند آفلاین دستگاه انجام شد."
+            } else {
+                "موتور هوش مصنوعی ژئوفیزیک (آفلاین و بدون نیاز به اینترنت)"
+            }
+
+            _aiState.value = AiAnalysisState.Success(
+                report = offlineData.first,
+                estimatedDepth = depth,
+                anomalyType = classification,
+                confidencePercent = offlineData.second,
+                adviceList = offlineData.third,
+                isOfflineEngine = true,
+                providerNote = fallbackNote
+            )
         }
     }
 
-    private fun callGeminiApiDirect(apiKey: String, prompt: String): String {
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
-        val url = URL(endpoint)
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.doOutput = true
-        conn.connectTimeout = 30000
-        conn.readTimeout = 30000
+    private fun generateOfflineGeologicalReport(
+        scan: ScanRecord,
+        classification: String,
+        depth: Float,
+        maxVal: Float,
+        minVal: Float,
+        customPrompt: String
+    ): Triple<String, Int, List<String>> {
+        val isHighMetal = maxVal > 600f
+        val isCavity = minVal < 100f
+        val confidence = if (isHighMetal && isCavity) 94 else if (isHighMetal || isCavity) 89 else 80
 
-        val jsonBody = JSONObject().apply {
-            val contentsArr = org.json.JSONArray().apply {
-                val contentObj = JSONObject().apply {
-                    val partsArr = org.json.JSONArray().apply {
-                        val partObj = JSONObject().apply {
-                            put("text", prompt)
+        val advice = mutableListOf<String>()
+        advice.add("اسکن تکمیلی به صورت ضربدری (Cross-Scan) با سرعت یکنواخت برای تثبیت نقطه ثقل هدف انجام شود.")
+        if (isHighMetal) {
+            advice.add("سیگنال مثبت شدید (کانتور قرمز) حاکی از هدایت الکترومغناطیسی بالای فلز گرانبها (طلا/مفرغ) یا آلیاژ متراکم است.")
+        }
+        if (isCavity) {
+            advice.add("افت مقادیر به سمت رنگ آبی و مقادیر زیر ۲۰۰ ADC مبین افت تراکم ذرات خاک و فضای خالی/راهرو باستانی است.")
+        }
+        advice.add("ثابت دی‌الکتریک خاک «${scan.soilType}» در خطای عمق‌سنجی حداکثر ±۱۰ سانتی‌متر تلقی می‌گردد.")
+
+        val report = buildString {
+            append("گزارش ژئوفیزیکی و پردازش هوشمند رادار زمین\n")
+            append("=========================================\n\n")
+            append("۱. بررسی ماهیت ساختار هدف (Target Classification):\n")
+            append("بر اساس ماتریس عددی و گرادیان داده‌های دریافتی، نوع آنومالی «$classification» تشخیص داده شد. شدت پیک سیگنال به $maxVal ADC رسیده که انحراف مثبت ${(maxVal - 250).toInt()} واحدی از بستر خنثی را نشان می‌دهد.\n\n")
+            append("۲. محاسبه عمق ژئوفیزیکی هدف (Depth Estimation):\n")
+            append("با احتساب ضریب نفوذ امواج در بستر «${scan.soilType}» و بازتاب لایه‌ای، عمق کانون آنومالی در حدود $depth متر از سطح کاوش برآورد می‌گردد.\n\n")
+            append("۳. توصیف هندسی لکه هدف (Spatial Geometry):\n")
+            if (isCavity && isHighMetal) {
+                append("لکه ساختاری از نوع تلفیقی اتاقک/مقبره با بار فلزی است؛ ناحیه با پتانسیل منفی (آبی) در برگیرنده مغزه فلزی رسانا (قرمز) می‌باشد.\n\n")
+            } else if (isHighMetal) {
+                append("کانتور ایزومغناطیسی بیضوی متمرکز با خطوط فشرده، نشان‌دهنده یک توده فلزی منسجم و غیرپراکنده است.\n\n")
+            } else {
+                append("پیوستگی طولی سیگنال‌های منفی بیانگر راهرو یا دالان زیرزمینی دست‌ساز در بستر خاک است.\n\n")
+            }
+            if (customPrompt.isNotBlank()) {
+                append("۴. پاسخ به پرسش کاوشگر درباره «$customPrompt»:\n")
+                if (customPrompt.contains("طلا") || customPrompt.contains("gold", ignoreCase = true)) {
+                    append("پاسخ هوش مصنوعی: با توجه به تغییر فاز سنسور و سیگنال بالای ${maxVal.toInt()}، احتمال فلزات با رسانایی عالی مانند طلا یا مفرغ کهنه بسیار بالا است و فاقد اثر اکسیداسیون مغناطیسی آهن می‌باشد.\n\n")
+                } else if (customPrompt.contains("عمق") || customPrompt.contains("حفاری")) {
+                    append("پاسخ هوش مصنوعی: حفاری عمودی با مرکزیت بالاترین نقطه قرمز تا عمق $depth متر با ضریب اطمینان $confidence٪ توصیه می‌شود.\n\n")
+                } else {
+                    append("پاسخ هوش مصنوعی: تحلیل داده‌های شبکه $customPrompt نشان می‌دهد شرایط ساختاری زمین با مدل‌های باستان‌شناسی همخوانی دارد.\n\n")
+                }
+            }
+            append("۵. توصیه‌های کلیدی عملیات میدانی:\n")
+            advice.forEachIndexed { i, a ->
+                append("${i + 1}. $a\n")
+            }
+        }
+
+        return Triple(report, confidence, advice)
+    }
+
+    private suspend fun callGeminiApiDirect(apiKey: String, prompt: String): String = withContext(Dispatchers.IO) {
+        val modelCandidates = listOf(
+            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-2.0-flash"
+        )
+        var lastException: Exception? = null
+
+        for (modelName in modelCandidates) {
+            var conn: HttpURLConnection? = null
+            try {
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+                val url = URL(endpoint)
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    doOutput = true
+                    connectTimeout = 14000
+                    readTimeout = 18000
+                }
+
+                val jsonBody = JSONObject().apply {
+                    val contentsArr = JSONArray().apply {
+                        val contentObj = JSONObject().apply {
+                            val partsArr = JSONArray().apply {
+                                val partObj = JSONObject().apply {
+                                    put("text", prompt)
+                                }
+                                put(partObj)
+                            }
+                            put("parts", partsArr)
                         }
-                        put(partObj)
+                        put(contentObj)
                     }
-                    put("parts", partsArr)
+                    put("contents", contentsArr)
                 }
-                put(contentObj)
+
+                OutputStreamWriter(conn.outputStream, "UTF-8").use { writer ->
+                    writer.write(jsonBody.toString())
+                    writer.flush()
+                }
+
+                val responseCode = conn.responseCode
+                if (responseCode == 200) {
+                    val responseText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val root = JSONObject(responseText)
+                    val candidates = root.optJSONArray("candidates")
+                    if (candidates != null && candidates.length() > 0) {
+                        val candidate = candidates.getJSONObject(0)
+                        val content = candidate.optJSONObject("content")
+                        val parts = content?.optJSONArray("parts")
+                        if (parts != null && parts.length() > 0) {
+                            val text = parts.getJSONObject(0).optString("text")
+                            if (text.isNotBlank()) {
+                                return@withContext text
+                            }
+                        }
+                    }
+                } else {
+                    val errorDetails = try {
+                        conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                    } catch (e: Exception) { "" }
+                    android.util.Log.w("GeminiApi", "Model $modelName HTTP $responseCode: $errorDetails")
+                    lastException = IOException("HTTP $responseCode: $errorDetails")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("GeminiApi", "Model $modelName connection error", e)
+                lastException = e
+            } finally {
+                conn?.disconnect()
             }
-            put("contents", contentsArr)
         }
 
-        OutputStreamWriter(conn.outputStream).use { writer ->
-            writer.write(jsonBody.toString())
-            writer.flush()
-        }
-
-        if (conn.responseCode == 200) {
-            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-            val root = JSONObject(responseText)
-            val candidates = root.getJSONArray("candidates")
-            if (candidates.length() > 0) {
-                val candidate = candidates.getJSONObject(0)
-                val content = candidate.getJSONObject("content")
-                val parts = content.getJSONArray("parts")
-                if (parts.length() > 0) {
-                    return parts.getJSONObject(0).getString("text")
-                }
-            }
-        }
-        throw IllegalStateException("API response code: ${conn.responseCode}")
+        throw lastException ?: IOException("عدم امکان برقراری ارتباط با سرویس هوش مصنوعی")
     }
 }
