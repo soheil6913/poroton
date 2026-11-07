@@ -89,7 +89,7 @@ fun Native3DCanvas(
             val canvasH = size.height
             val centerX = canvasW * 0.5f + panX
             val centerY = canvasH * 0.52f + panY
-            val baseScale = (min(canvasW, canvasH) * 0.38f) * zoom
+            val baseScale = (min(canvasW, canvasH) * 0.44f) * zoom
 
             val yawRad = Math.toRadians(yaw.toDouble()).toFloat()
             val pitchRad = Math.toRadians(pitch.toDouble()).toFloat()
@@ -177,7 +177,7 @@ fun Native3DCanvas(
 
             if (isTopDown2D) {
                 // 2D Top-Down Orthographic Radar Matrix
-                val gridSide = min(canvasW * 0.72f, canvasH * 0.52f) * zoom
+                val gridSide = min(canvasW * 0.76f, canvasH * 0.56f) * zoom
                 val cellW = gridSide / width
                 val cellH = gridSide / length
                 val startX = centerX - gridSide / 2f
@@ -254,10 +254,10 @@ fun Native3DCanvas(
                                 lineTo(quad.p3.screenX, quad.p3.screenY)
                                 close()
                             }
-                            // Fill polygon
-                            drawPath(path, quad.color.copy(alpha = 0.82f))
+                            // Fill polygon with high alpha for rich vibrant color
+                            drawPath(path, quad.color.copy(alpha = 0.96f))
                             // Draw subtle wire edge
-                            drawPath(path, Color.White.copy(alpha = 0.12f), style = Stroke(width = 1f))
+                            drawPath(path, Color.White.copy(alpha = 0.20f), style = Stroke(width = 1.2f))
                         }
                     }
                     "WIREFRAME" -> {
@@ -269,26 +269,26 @@ fun Native3DCanvas(
                                 if (x < width - 1) {
                                     val right = projected[y * width + (x + 1)]
                                     drawLine(
-                                        color = curr.pt.color.copy(alpha = 0.75f),
+                                        color = curr.pt.color.copy(alpha = 0.92f),
                                         start = Offset(curr.screenX, curr.screenY),
                                         end = Offset(right.screenX, right.screenY),
-                                        strokeWidth = 2f
+                                        strokeWidth = 2.5f
                                     )
                                 }
                                 // Bottom neighbor
                                 if (y < length - 1) {
                                     val bottom = projected[(y + 1) * width + x]
                                     drawLine(
-                                        color = curr.pt.color.copy(alpha = 0.75f),
+                                        color = curr.pt.color.copy(alpha = 0.92f),
                                         start = Offset(curr.screenX, curr.screenY),
                                         end = Offset(bottom.screenX, bottom.screenY),
-                                        strokeWidth = 2f
+                                        strokeWidth = 2.5f
                                     )
                                 }
                                 // Node dot
                                 drawCircle(
                                     color = curr.pt.color,
-                                    radius = 2.5f,
+                                    radius = 3.2f,
                                     center = Offset(curr.screenX, curr.screenY)
                                 )
                             }

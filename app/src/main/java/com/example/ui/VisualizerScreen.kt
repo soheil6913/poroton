@@ -1,6 +1,8 @@
 package com.example.ui
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -46,6 +48,7 @@ fun VisualizerScreen(
     val filterMode by viewModel.filterMode.collectAsStateWithLifecycle()
     val sliceAxis by viewModel.sliceAxis.collectAsStateWithLifecycle()
     val sliceIndex by viewModel.sliceIndex.collectAsStateWithLifecycle()
+    val resetTrigger by viewModel.resetTrigger.collectAsStateWithLifecycle()
 
     var showSaveDialog by remember { mutableStateOf(false) }
     var scanSaveName by remember { mutableStateOf("") }
@@ -54,6 +57,16 @@ fun VisualizerScreen(
     var useThreeJS by remember { mutableStateOf(true) }
     var showExportDialog by remember { mutableStateOf(false) }
     var isBottomDrawerExpanded by remember { mutableStateOf(true) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importScanFromUri(context, uri, autoAnalyze = false) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     if (viewedScan == null) {
         Column(
@@ -68,22 +81,39 @@ fun VisualizerScreen(
             Text("هیچ اسکن فعالی یافت نشد", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "لطفاً ابتدا یک اسکن زمین در تب اول انجام دهید یا یکی از قالب‌های آماده تاریخی را از تب چهارم لود کنید.",
+                "لطفاً ابتدا یک اسکن زمین انجام دهید یا فایل اسکن رادار (CSV / JSON / OKM) را از حافظه وارد نمایید.",
                 color = GrayText,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(20.dp))
-            Button(
-                onClick = {
-                    if (savedScans.isNotEmpty()) {
-                        viewModel.loadScan(savedScans.first())
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("بارگذاری اسکن نمونه (Load Demo)", color = Color.Black, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = {
+                        if (savedScans.isNotEmpty()) {
+                            viewModel.loadScan(savedScans.first())
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("اسکن نمونه (Demo)", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        filePickerLauncher.launch(
+                            arrayOf("*/*", "text/*", "text/csv", "application/json", "text/plain")
+                        )
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberCyan),
+                    border = BorderStroke(1.dp, CyberCyan),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("وارد کردن فایل اسکن", fontWeight = FontWeight.Bold)
+                }
             }
         }
     } else {
@@ -186,6 +216,19 @@ fun VisualizerScreen(
                                 border = BorderStroke(1.dp, if (isTopDown2D) CyberCyan else CardBorder),
                                 modifier = Modifier.testTag("2d_3d_toggle_chip")
                             )
+
+                            // Import Scan File
+                            IconButton(
+                                onClick = {
+                                    filePickerLauncher.launch(
+                                        arrayOf("*/*", "text/*", "text/csv", "application/json", "text/plain")
+                                    )
+                                },
+                                modifier = Modifier.size(32.dp),
+                                colors = IconButtonDefaults.iconButtonColors(containerColor = CardBg)
+                            ) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Import Scan", tint = CyberCyan, modifier = Modifier.size(16.dp))
+                            }
 
                             // Reset Camera
                             IconButton(
@@ -305,6 +348,10 @@ fun VisualizerScreen(
                         renderStyle = renderStyle,
                         colorThreshold = colorThreshold,
                         filterMode = filterMode,
+                        resetTrigger = resetTrigger,
+                        onFallbackToNative = {
+                            useThreeJS = false
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {

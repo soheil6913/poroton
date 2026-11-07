@@ -3,6 +3,7 @@ package com.example.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -25,6 +26,8 @@ fun ThreeJsVisualizer(
     renderStyle: String,
     colorThreshold: Float,
     filterMode: String,
+    resetTrigger: Long = 0L,
+    onFallbackToNative: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -57,6 +60,15 @@ fun ThreeJsVisualizer(
             "if (window.updateParams) { window.updateParams($zScale, '$renderStyle', $colorThreshold, '$filterMode'); }",
             null
         )
+    }
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0L) {
+            webViewRef?.evaluateJavascript(
+                "if (window.resetCamera) { window.resetCamera(); }",
+                null
+            )
+        }
     }
 
     LaunchedEffect(scan.data) {
@@ -93,6 +105,18 @@ fun ThreeJsVisualizer(
                                 null
                             )
                         }
+
+                        override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                            // Returning true prevents the Android host app process from crashing
+                            try {
+                                view?.let {
+                                    (it.parent as? android.view.ViewGroup)?.removeView(it)
+                                    it.destroy()
+                                }
+                            } catch (_: Exception) {}
+                            onFallbackToNative?.invoke()
+                            return true
+                        }
                     }
                     loadDataWithBaseURL("https://okm.visualizer.local/", htmlContent, "text/html", "UTF-8", null)
                     webViewRef = this
@@ -100,6 +124,13 @@ fun ThreeJsVisualizer(
             },
             update = { view ->
                 webViewRef = view
+            },
+            onRelease = { webView ->
+                try {
+                    webView.stopLoading()
+                    webView.loadUrl("about:blank")
+                    webView.destroy()
+                } catch (_: Exception) {}
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -197,41 +228,68 @@ private fun generateThreeJsHtml(
 
     const container = document.getElementById('canvas-container');
 
-    // 1. Scene setup
+    // 1. Scene setup (No fog so colors remain 100% bright, crisp and saturated at all distances)
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x07090E, 0.035);
 
-    // 2. Camera setup
+    // 2. Camera setup - Balanced natural viewing distance (~37 units)
+    // provides clean padding around the 3D terrain without feeling crowded or oversized
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(22, 28, 30);
+    camera.position.set(18, 22, 24);
 
-    // 3. Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    container.appendChild(renderer.domElement);
+    // 3. Renderer setup - Lightweight & resilient on mobile WebGL / WebView
+    let renderer = null;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: true,
+        powerPreference: 'default',
+        precision: 'mediump'
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(1.0);
+      renderer.shadowMap.enabled = false;
+      container.appendChild(renderer.domElement);
+
+      renderer.domElement.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        console.warn('WebGL context lost');
+      }, false);
+    } catch (e) {
+      console.error('WebGL init error:', e);
+    }
 
     // 4. OrbitControls
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    const controls = new THREE.OrbitControls(camera, renderer ? renderer.domElement : container);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.maxPolarAngle = Math.PI / 2.05; // Prevent camera from going underneath ground
     controls.minDistance = 6;
     controls.maxDistance = 120;
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, 0.5, 0);
 
-    // 5. Lighting (Laser & Cyber aesthetic)
-    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.65);
+    // 5. Lighting (Clean Cyber Studio setup - balanced and natural without glare)
+    // Upper hemisphere sky-ground ambient fill
+    const hemiLight = new THREE.HemisphereLight(0xFFFFFF, 0x1E293B, 0.75);
+    scene.add(hemiLight);
+
+    // Uniform white ambient fill
+    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.75);
     scene.add(ambientLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.8);
-    dirLight1.position.set(20, 40, 20);
+    // Key directional sunlight
+    const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 1.05);
+    dirLight1.position.set(20, 35, 20);
     scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x00E5FF, 0.4);
-    dirLight2.position.set(-20, -10, -20);
+    // Cyber Cyan fill light from opposite angle
+    const dirLight2 = new THREE.DirectionalLight(0x00E5FF, 0.45);
+    dirLight2.position.set(-20, 20, -20);
     scene.add(dirLight2);
+
+    // Gentle bottom bounce light for cavities
+    const dirLight3 = new THREE.DirectionalLight(0x3B82F6, 0.35);
+    dirLight3.position.set(0, -20, 0);
+    scene.add(dirLight3);
 
     // 6. Subsurface Ground Reference Grid (Base Floor)
     const gridHelper = new THREE.GridHelper(30, 20, 0xFFC837, 0x1B2636);
@@ -256,17 +314,17 @@ private fun generateThreeJsHtml(
     laserBeam.position.y = 0.05;
     scene.add(laserBeam);
 
-    // 7. Laser Neon Colormap function (Matching Python script exact colors):
-    // #000080 Deep Navy (Lowest / Void)
-    // #0000FF Blue
-    // #00FFFF Cyan
-    // #00FF00 Laser Green (Normal background soil)
-    // #FFFF00 Yellow
-    // #FF0000 Red (Highest / Metal target)
+    // 7. Laser Neon Colormap function (Matching Proton/OKM exact vibrant palette):
+    // #001BAA Electric Navy/Blue (Cavity / Void / Low signal - clearly illuminated)
+    // #0055FF Royal Blue (Low boundary)
+    // #00FFFF Electric Cyan (Damp / Ferrous)
+    // #00FF66 Laser Neon Green (Normal background soil)
+    // #FFFF00 Luminous Yellow (Mineralized / Medium target)
+    // #FF0033 Radiant Laser Red (Highest / Metal target)
     function getLaserColor(normVal, threshold) {
       const clamped = Math.max(-1.0, Math.min(2.0, normVal));
       if (threshold > 0 && Math.abs(clamped) < threshold) {
-        return new THREE.Color(0x141822);
+        return new THREE.Color(0x161D2A);
       }
 
       // Map -1.0 .. 2.0 to 0.0 .. 1.0
@@ -274,22 +332,45 @@ private fun generateThreeJsHtml(
 
       const c = new THREE.Color();
       if (t < 0.2) {
-        // Deep Navy (0x000080) to Blue (0x0000FF)
-        c.lerpColors(new THREE.Color(0x000080), new THREE.Color(0x0000FF), t / 0.2);
+        // Deep Electric Navy (0x001BAA) to Royal Blue (0x0055FF)
+        c.lerpColors(new THREE.Color(0x001BAA), new THREE.Color(0x0055FF), t / 0.2);
       } else if (t < 0.4) {
-        // Blue (0x0000FF) to Cyan (0x00FFFF)
-        c.lerpColors(new THREE.Color(0x0000FF), new THREE.Color(0x00FFFF), (t - 0.2) / 0.2);
+        // Royal Blue (0x0055FF) to Electric Cyan (0x00FFFF)
+        c.lerpColors(new THREE.Color(0x0055FF), new THREE.Color(0x00FFFF), (t - 0.2) / 0.2);
       } else if (t < 0.6) {
-        // Cyan (0x00FFFF) to Laser Green (0x00FF66)
+        // Electric Cyan (0x00FFFF) to Laser Neon Green (0x00FF66)
         c.lerpColors(new THREE.Color(0x00FFFF), new THREE.Color(0x00FF66), (t - 0.4) / 0.2);
       } else if (t < 0.8) {
-        // Laser Green (0x00FF66) to Yellow (0xFFFF00)
+        // Laser Neon Green (0x00FF66) to Luminous Yellow (0xFFFF00)
         c.lerpColors(new THREE.Color(0x00FF66), new THREE.Color(0xFFFF00), (t - 0.6) / 0.2);
       } else {
-        // Yellow (0xFFFF00) to Laser Red (0xFF0033)
+        // Luminous Yellow (0xFFFF00) to Radiant Laser Red (0xFF0033)
         c.lerpColors(new THREE.Color(0xFFFF00), new THREE.Color(0xFF0033), (t - 0.8) / 0.2);
       }
       return c;
+    }
+
+    // Safe memory disposal utility to prevent Chromium GPU memory leaks and crashes
+    function safeDispose(obj) {
+      if (!obj) return;
+      scene.remove(obj);
+      if (obj.geometry) {
+        try { obj.geometry.dispose(); } catch (e) {}
+      }
+      if (obj.material) {
+        try {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(m => m && m.dispose && m.dispose());
+          } else if (obj.material.dispose) {
+            obj.material.dispose();
+          }
+        } catch (e) {}
+      }
+      if (obj.children && obj.children.length > 0) {
+        for (let i = obj.children.length - 1; i >= 0; i--) {
+          safeDispose(obj.children[i]);
+        }
+      }
     }
 
     // 8. Dynamic Mesh Builder
@@ -298,9 +379,12 @@ private fun generateThreeJsHtml(
     let currentPoints = null;
 
     function build3DMesh() {
-      if (currentMesh) scene.remove(currentMesh);
-      if (currentWireframe) scene.remove(currentWireframe);
-      if (currentPoints) scene.remove(currentPoints);
+      safeDispose(currentMesh);
+      currentMesh = null;
+      safeDispose(currentWireframe);
+      currentWireframe = null;
+      safeDispose(currentPoints);
+      currentPoints = null;
 
       const w = gridWidth;
       const l = gridLength;
@@ -337,7 +421,7 @@ private fun generateThreeJsHtml(
           }
 
           // Compute laser neon color
-          const vertColor = isFiltered ? new THREE.Color(0x141822) : getLaserColor(normHeight, currentThreshold);
+          const vertColor = isFiltered ? new THREE.Color(0x161D2A) : getLaserColor(normHeight, currentThreshold);
           colors.push(vertColor.r, vertColor.g, vertColor.b);
         }
       }
@@ -355,10 +439,10 @@ private fun generateThreeJsHtml(
         scene.add(currentMesh);
       } else if (currentStyle === 'POINTS') {
         const pointMat = new THREE.PointsMaterial({
-          size: 1.2,
+          size: 1.5,
           vertexColors: true,
           transparent: true,
-          opacity: 0.9
+          opacity: 0.95
         });
         currentPoints = new THREE.Points(geometry, pointMat);
         scene.add(currentPoints);
@@ -377,10 +461,10 @@ private fun generateThreeJsHtml(
             const vertColor = getLaserColor(normHeight, currentThreshold);
 
             const pillarGeo = new THREE.BoxGeometry(pillarW, height, pillarD);
-            const pillarMat = new THREE.MeshStandardMaterial({
+            const pillarMat = new THREE.MeshPhongMaterial({
               color: vertColor,
-              roughness: 0.35,
-              metalness: 0.2
+              shininess: 40,
+              specular: 0x445566
             });
             const pillarMesh = new THREE.Mesh(pillarGeo, pillarMat);
 
@@ -393,12 +477,12 @@ private fun generateThreeJsHtml(
         currentMesh = voxelGroup;
         scene.add(currentMesh);
       } else {
-        // Default: Shaded SURFACE with subtle glowing laser wireframe overlay
-        const surfaceMat = new THREE.MeshStandardMaterial({
+        // Default: Shaded SURFACE with clean balanced luminosity and glowing wireframe overlay
+        const surfaceMat = new THREE.MeshPhongMaterial({
           vertexColors: true,
           side: THREE.DoubleSide,
-          roughness: 0.28,
-          metalness: 0.15,
+          shininess: 24,
+          specular: 0x334455,
           flatShading: false
         });
         currentMesh = new THREE.Mesh(geometry, surfaceMat);
@@ -406,9 +490,9 @@ private fun generateThreeJsHtml(
         currentMesh.castShadow = true;
         scene.add(currentMesh);
 
-        // Subtle glowing wireframe overlay for tech look
+        // Subtle glowing wireframe overlay for high-tech look
         const wireMat = new THREE.MeshBasicMaterial({
-          color: 0x00E5FF,
+          color: 0x00FFFF,
           wireframe: true,
           transparent: true,
           opacity: 0.22
@@ -439,8 +523,8 @@ private fun generateThreeJsHtml(
     };
 
     window.resetCamera = function() {
-      camera.position.set(22, 28, 30);
-      controls.target.set(0, 0, 0);
+      camera.position.set(18, 22, 24);
+      controls.target.set(0, 0.5, 0);
       controls.update();
     };
 

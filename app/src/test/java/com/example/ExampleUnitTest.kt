@@ -29,4 +29,42 @@ class ExampleUnitTest {
         val dimmedColor = getTargetColor(0.02f, threshold = 0.1f)
         assertTrue(dimmedColor.red < 0.2f && dimmedColor.green < 0.2f && dimmedColor.blue < 0.25f)
     }
+
+    @Test
+    fun testScanFileImporterMatrix() {
+        val sampleCsv = """
+            240, 245, 250, 260
+            242, 248, 520, 262
+            240, 244, 250, 258
+        """.trimIndent()
+
+        val scan = com.example.util.ScanFileImporter.parseContent("survey_site_1.csv", sampleCsv)
+        assertEquals("survey_site_1", scan.name)
+        assertEquals(4, scan.gridWidth)
+        assertEquals(3, scan.gridLength)
+        assertEquals(12, scan.data.size)
+        assertEquals(520f, scan.maxSignal, 0.1f)
+        assertTrue(scan.anomalyClassification.contains("طلا") || scan.anomalyClassification.contains("فلز"))
+    }
+
+    @Test
+    fun testScanFileImporterJson() {
+        val sampleJson = """
+            {
+              "name": "Buried Chamber Tomb",
+              "gridWidth": 3,
+              "gridLength": 3,
+              "soilType": "سنگ و صخره (Hard Rock)",
+              "data": [240, 240, 240, 240, 120, 240, 240, 240, 240]
+            }
+        """.trimIndent()
+
+        val scan = com.example.util.ScanFileImporter.parseContent("tomb.json", sampleJson)
+        assertEquals("Buried Chamber Tomb", scan.name)
+        assertEquals(3, scan.gridWidth)
+        assertEquals(3, scan.gridLength)
+        assertEquals(9, scan.data.size)
+        assertEquals(120f, scan.minSignal, 0.1f)
+        assertTrue(scan.anomalyClassification.contains("حفره") || scan.anomalyClassification.contains("خالی"))
+    }
 }

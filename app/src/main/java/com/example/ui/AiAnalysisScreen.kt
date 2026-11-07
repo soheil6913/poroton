@@ -1,5 +1,8 @@
 package com.example.ui
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -13,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -24,6 +28,7 @@ import com.example.ui.theme.*
 
 @Composable
 fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
+    val context = LocalContext.current
     val viewedScan by viewModel.viewedScan.collectAsStateWithLifecycle()
     val aiState by viewModel.aiState.collectAsStateWithLifecycle()
     val aiMode by viewModel.aiMode.collectAsStateWithLifecycle()
@@ -32,6 +37,24 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
     var userPrompt by remember { mutableStateOf("") }
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var tempApiKey by remember { mutableStateOf(customApiKey) }
+    var isImporting by remember { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            isImporting = true
+            viewModel.importScanFromUri(
+                context = context,
+                uri = uri,
+                autoAnalyze = true,
+                onResult = { success, msg ->
+                    isImporting = false
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -47,6 +70,7 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -61,27 +85,59 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                 }
                 Column {
                     Text(
-                        text = "تحلیل هوش مصنوعی رادار (AI Geological Inspector)",
+                        text = "تحلیل هوش مصنوعی رادار (AI Inspector)",
                         color = CyberGold,
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "تفسیر امواج مغناطیسی، تشخیص طلا، حفره و تعیین عمق",
                         color = GrayText,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            IconButton(
-                onClick = {
-                    tempApiKey = customApiKey
-                    showApiKeyDialog = true
-                },
-                colors = IconButtonDefaults.iconButtonColors(containerColor = CardBg)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(Icons.Default.Key, contentDescription = "API Key", tint = CyberCyan, modifier = Modifier.size(20.dp))
+                // Import external scan file button
+                FilledTonalButton(
+                    onClick = {
+                        filePickerLauncher.launch(
+                            arrayOf("*/*", "text/*", "text/csv", "application/json", "text/plain")
+                        )
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = CyberGold.copy(alpha = 0.2f),
+                        contentColor = CyberGold
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FileUpload,
+                        contentDescription = "وارد کردن فایل",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isImporting) "در حال خواندن..." else "وارد کردن فایل", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                IconButton(
+                    onClick = {
+                        tempApiKey = customApiKey
+                        showApiKeyDialog = true
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = CardBg)
+                ) {
+                    Icon(Icons.Default.Key, contentDescription = "API Key", tint = CyberCyan, modifier = Modifier.size(20.dp))
+                }
             }
         }
 
@@ -96,9 +152,38 @@ fun AiAnalysisScreen(viewModel: VisualizerViewModel) {
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("هیچ اسکن فعالی جهت تحلیل انتخاب نشده است.", color = Color.White, fontSize = 13.sp)
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(CyberGold.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = CyberGold, modifier = Modifier.size(32.dp))
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("هیچ اسکن فعالی برای تحلیل انتخاب نشده است", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("ابتدا از تب تاریخچه یا اسکن، یک اسکن را انتخاب کنید.", color = GrayText, fontSize = 11.sp)
+                    Text(
+                        "فایل اسکن رادار یا مگنتومتر (CSV، JSON، OKM یا داده‌های عددی) را از حافظه گوشی وارد کنید تا هوش مصنوعی فوراً آن را تحلیل کند.",
+                        color = GrayText,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            filePickerLauncher.launch(
+                                arrayOf("*/*", "text/*", "text/csv", "application/json", "text/plain")
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberGold),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("وارد کردن فایل اسکن از حافظه (Import Scan)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             }
         } else {

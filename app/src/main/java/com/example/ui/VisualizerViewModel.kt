@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.ScanRecord
 import com.example.data.ScanRepository
 import com.example.hardware.SensorManager
+import com.example.util.ScanFileImporter
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -399,6 +401,36 @@ class VisualizerViewModel(application: Application) : AndroidViewModel(applicati
         repository.deleteScan(record.id)
         if (_viewedScan.value?.id == record.id) {
             _viewedScan.value = savedScans.value.firstOrNull { it.id != record.id }
+        }
+    }
+
+    /**
+     * Imports an external ground scan file (CSV, JSON, TXT, OKM) from device storage,
+     * saves it to the local survey repository, sets it as active, and optionally starts AI analysis immediately.
+     */
+    fun importScanFromUri(
+        context: Context,
+        uri: Uri,
+        autoAnalyze: Boolean = false,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = ScanFileImporter.importScanFromUri(context, uri)
+            result.onSuccess { scan ->
+                repository.saveScan(scan)
+                withContext(Dispatchers.Main) {
+                    _viewedScan.value = scan
+                    _selectedNodeIndex.value = null
+                    onResult(true, "اسکن «${scan.name}» با ابعاد ${scan.gridWidth}×${scan.gridLength} با موفقیت بارگذاری شد.")
+                    if (autoAnalyze) {
+                        runAiAnalysis()
+                    }
+                }
+            }.onFailure { err ->
+                withContext(Dispatchers.Main) {
+                    onResult(false, err.message ?: "خطا در خواندن فایل اسکن.")
+                }
+            }
         }
     }
 

@@ -1,5 +1,8 @@
 package com.example.ui
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -44,6 +47,16 @@ fun HistoryScreen(
     var searchQuery by remember { mutableStateOf("") }
     var exportScanTarget by remember { mutableStateOf<ScanRecord?>(null) }
 
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importScanFromUri(context, uri, autoAnalyze = false) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     val filteredScans = remember(savedScans, searchQuery) {
         if (searchQuery.isBlank()) savedScans
         else savedScans.filter {
@@ -78,6 +91,25 @@ fun HistoryScreen(
                     color = GrayText,
                     fontSize = 11.sp
                 )
+            }
+
+            // Import scan file button
+            FilledTonalButton(
+                onClick = {
+                    filePickerLauncher.launch(
+                        arrayOf("*/*", "text/*", "text/csv", "application/json", "text/plain")
+                    )
+                },
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = CyberCyan.copy(alpha = 0.15f),
+                    contentColor = CyberCyan
+                ),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("وارد کردن فایل", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
 
